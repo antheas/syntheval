@@ -9,7 +9,7 @@ import os
 
 import pandas as pd
 from tqdm import tqdm
-from typing import Literal, List, Dict
+from typing import Literal, List, Dict, Any
 from pandas import DataFrame
 
 from .metrics import load_metrics
@@ -201,6 +201,28 @@ class SynthEval():
 
         self._raw_results = raw_results
         return key_results
+
+    def evaluate_metric(self, synthetic_dataframe: DataFrame, method: str, args: Dict[str, Any], analysis_target_var: str = None):
+        """Method for generating the SynthEval report for a single metric. Can be used to parallelize outside syntheval.
+        """
+        if method not in loaded_metrics.keys():
+            print(f"Unrecognised keyword: {method}")
+            return None
+
+        self._update_syn_data(synthetic_dataframe)
+
+        CLE = consistent_label_encoding(self.real, self.synt, self.categorical_columns, self.numerical_columns, self.hold_out)
+        real_data = CLE.encode(self.real)
+        synt_data = CLE.encode(self.synt)
+        if self.hold_out is not None: hout_data = CLE.encode(self.hold_out)
+        else: hout_data = None
+
+        #TODO: Add object manager to increase efficiency by reusing nn distances and trained classification models between metrics. 
+        M = loaded_metrics[method](real_data, synt_data, hout_data, self.categorical_columns, self.numerical_columns, self.nn_dist, analysis_target_var, do_preprocessing=CLE, verbose=self.verbose)
+        raw_results = M.evaluate(**args)
+    
+        normalized_result = M.normalize_output()
+        return raw_results, normalized_result
 
     def benchmark(self, dfs_or_path: Dict[str, DataFrame] | str, analysis_target_var=None, presets_file=None, rank_strategy='linear', **kwargs):
         """Method for running SynthEval multiple times across all synthetic data files in a
